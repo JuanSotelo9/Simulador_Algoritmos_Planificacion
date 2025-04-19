@@ -196,7 +196,6 @@ const Algoritmos = {
                         procesoActual.tiempoBloqueo += bloque.duracion;
                         procesoActual.bloqueActual++;
                         bloqueados.push(procesoActual);
-                        tiempoPlanificacion += bloque.duracion;
                         break; // sale del while y vuelve al ciclo principal
                     }
 
@@ -395,19 +394,166 @@ const Algoritmos = {
         }
     },
 
-    //  Round Robin (a implementar)
     RR: {
         nombre: "Round Robin",
         descripcion: "Asigna un quantum fijo a cada proceso en orden circular.",
         ejecutar: function (procesos, quantum) {
-            // Implementación pendiente
+
+            let tiempo = 0;
+            let listos = [];
+            let bloqueados = [];
+            let terminados = [];
+            let procesoActual = null;
+            let estadisticas = [];
+            let tiempoCPU = 0;
+            let tiempoPlanificacion = 0;
+
+            // Se copia los procesos y se ordenan por orden de llegada
+            let colaLlegada = procesos.map(p => new Proceso(p.id, p.llegada, p.ejecucionTotal, [...p.bloques]))
+                                .sort((a,b) => a.llegada - b.llegada);
+
+            // Tiempo de planificación para preparar el quantum
+            tiempo++;
+            tiempoPlanificacion++;
+
+            while (colaLlegada.length > 0 || listos.length > 0 || bloqueados.length > 0){
+
+                // Revisamos si llegan nuevos procesos
+                while (colaLlegada.length > 0 && colaLlegada[0].llegada <= tiempo) {
+                    listos.push(colaLlegada.shift());
+                }
+
+                // Revisamos si se termina algun bloqueo
+                for (let i = 0; i < bloqueados.length; i++) {
+                    const proceso = bloqueados[i];
+                    if (tiempo >= proceso.bloqueoHasta) {
+                        bloqueados.splice(i, 1);
+                        proceso.estado = 'listo';
+                        listos.push(proceso);
+                        i--;
+                    }
+                }
+
+                // Si no hay procesos listos, el tiempo avanzara
+                if (listos.length === 0) {
+                    tiempo++;
+                    tiempoPlanificacion++;
+                    continue;
+                }
+
+                // Ejecutamos el primer proceso en la cola
+                procesoActual = listos.shift();
+
+                // Se calcula el tiempo de respuesta si es la primera vez que llega
+                if (procesoActual.vecesEjecutado === 0){
+                    procesoActual.tiempoRespuesta = tiempo - procesoActual.llegada;
+                }
+
+                let tiempoRestante = Math.min(quantum, procesoActual.ejecucionRestante)
+
+                for (let i = 0; i<tiempoRestante; i++){
+                    const bloque = procesoActual.bloques[procesoActual.bloqueActual];
+                    let ejecutadoHastaAhora = procesoActual.ejecucionTotal - procesoActual.ejecucionRestante;
+
+                    // Verificamos si se inicia un bloqueo
+                    if (bloque && ejecutadoHastaAhora === bloque.inicio){
+                        procesoActual.estado = 'bloqueado';
+                        procesoActual.bloqueoHasta = tiempo + bloque.duracion;
+                        procesoActual.tiempoBloqueo += bloque.duracion;
+                        procesoActual.bloqueActual++;
+                        bloqueados.push(procesoActual);
+                        tiempo++;
+                        tiempoPlanificacion++;
+                        break; // Salimos del ciclo
+                    }
+
+                    // Ejecutamos una unidad de tiempo
+                    procesoActual.ejecucionRestante--;
+                    procesoActual.vecesEjecutado++;
+                    tiempo++;
+                    tiempoCPU++;
+                    ejecutadoHastaAhora = procesoActual.ejecucionTotal - procesoActual.ejecucionRestante;
+                    // Verificamos si llego algun proceso durante esta unidad de tiempo
+                    while (colaLlegada.length > 0 && colaLlegada[0].llegada <= tiempo) {
+                        listos.push(colaLlegada.shift());
+                    }
+
+                    // Se revisa si termino algun bloqueo durante esta unidad de tiempo
+                    for (let j = 0; j < bloqueados.length; j++) {
+                        const p = bloqueados[j];
+                        if (tiempo >= p.bloqueoHasta) {
+                            bloqueados.splice(j, 1);
+                            p.estado = 'listo';
+                            listos.push(p);
+                            j--;
+                        }
+                    }
+
+                    if (procesoActual.ejecucionRestante === 0) {
+                        break;
+                    }else if (bloque && ejecutadoHastaAhora === bloque.inicio){
+                        procesoActual.estado = 'bloqueado';
+                        procesoActual.bloqueoHasta = tiempo + bloque.duracion;
+                        procesoActual.tiempoBloqueo += bloque.duracion;
+                        procesoActual.bloqueActual++;
+                        bloqueados.push(procesoActual);
+                        tiempo++;
+                        tiempoPlanificacion++;
+                        break; // Salimos del ciclo
+                    }
+                }
+
+                // Si termino su ejecucion
+                if (procesoActual.ejecucionRestante === 0) {
+                    procesoActual.instanteFin = tiempo;
+                    tiempo++;
+                    tiempoPlanificacion++;
+                    
+                    terminados.push(procesoActual);
+                } 
+
+                if (procesoActual.ejecucionRestante > 0 && procesoActual.estado !== "bloqueado") {
+
+                    tiempo++;
+                    tiempoPlanificacion++;
+                
+                    listos.push(procesoActual);
+                }
+                
+            }
+            tiempo--;
+            tiempoPlanificacion--;
+            // Calcular estadísticas
+            terminados.forEach(p => {
+                const retorno = p.instanteFin - p.llegada;
+                const tiempoPerdido = retorno - p.ejecucionTotal - p.tiempoBloqueo;
+                const penalidad = (retorno / p.ejecucionTotal).toFixed(2);
+                estadisticas.push({
+                    proceso: p.id,
+                    ejecucion: p.ejecucionTotal,
+                    espera: tiempoPerdido,
+                    bloqueo: p.tiempoBloqueo,
+                    instanteFin: p.instanteFin,
+                    retorno: retorno,
+                    tiempoPerdido: tiempoPerdido,
+                    penalidad: penalidad,
+                    tiempoRespuesta: p.tiempoRespuesta
+                });
+            });
+
+            estadisticas.sort((a, b) => a.proceso.localeCompare(b.proceso));
+
+            const tiempoTotal = tiempo;
+            const usoCPU = ((tiempoCPU / tiempoTotal) * 100).toFixed(2);
+            const usoPlanificacion = ((tiempoPlanificacion / tiempoTotal) * 100).toFixed(2);
+
             return {
-                estadisticas: [],
-                tiempoTotal: 0,
-                tiempoCPU: 0,
-                tiempoPlanificacion: 0,
-                usoCPU: "0",
-                usoPlanificacion: "0"
+                estadisticas: estadisticas,
+                tiempoTotal: tiempoTotal,
+                tiempoCPU: tiempoCPU,
+                tiempoPlanificacion: tiempoPlanificacion,
+                usoCPU: usoCPU,
+                usoPlanificacion: usoPlanificacion
             };
         }
     },
@@ -462,6 +608,7 @@ function mostrarResultados(resultados, algoritmo) {
     // Mostrar métricas globales
     document.getElementById('tiempo-total').textContent = resultados.tiempoTotal;
     document.getElementById('uso-cpu').textContent = `${resultados.usoCPU}%`;
+    document.getElementById('cpu-procesamiento').textContent = `${resultados.usoPlanificacion}%`;
     document.getElementById('prom-retorno').textContent = totalProcesos > 0 ? (sumaRetorno / totalProcesos).toFixed(2) : "0";
     document.getElementById('prom-ejecucion').textContent = totalProcesos > 0 ? (sumaEjecucion / totalProcesos).toFixed(2) : "0";
     document.getElementById('prom-espera').textContent = totalProcesos > 0 ? (sumaEspera / totalProcesos).toFixed(2) : "0";
