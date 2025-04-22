@@ -481,3 +481,19 @@ tr:hover td {
     font-size: 10px;
     color: #718096;
 }
+
+.btn-example {
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+    margin-right: 10px;
+}
+
+.btn-example:hover {
+    background-color: #5a6268;
+}

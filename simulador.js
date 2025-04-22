@@ -9,7 +9,8 @@ class Proceso {
         this.bloqueActual = 0;
         this.bloqueoHasta = 0;
         this.tiempoBloqueo = 0;
-        this.tiempoRespuesta = 0;
+        this.tiempoRespuesta = null;
+        this.tiempoEspera = 0;
         this.instanteFin = 0;
         this.vecesEjecutado = 0;
         this.estado = 'listo';
@@ -24,118 +25,144 @@ let siguienteId = 1;
 // Algoritmos de planificación
 const Algoritmos = {
     FCFS: {
-        nombre: "First Come First Served con Bloqueos",
-        descripcion: "Ejecuta los procesos en orden de llegada, permitiendo bloqueos.",
-        ejecutar: function (procesos) {
-            let tiempo = 0;
-            let terminados = [];
-            let listos = [];
-            let bloqueados = [];
-            let estadisticas = [];
-            let tiempoCPU = 0;
-            let tiempoPlanificacion = 0;
+    nombre: "First Come First Served",
+    descripcion: "Ejecuta los procesos en orden de llegada estricto, manteniendo prioridad después de bloqueos.",
+    ejecutar: function (procesos) {
+        let tiempo = 0;
+        let terminados = [];
+        let listos = [];
+        let bloqueados = [];
+        let estadisticas = [];
+        let tiempoCPU = 0;
+        let tiempoPlanificacion = 0;
 
-            // Copiar procesos y ordenarlos por llegada
-            let colaLlegada = procesos.map(p => new Proceso(p.id, p.llegada, p.ejecucionTotal, [...p.bloques]))
-                .sort((a, b) => a.llegada - b.llegada);
+        // Copiar procesos y ordenarlos por llegada
+        let colaLlegada = procesos.map(p => {
+            let nuevoProceso = new Proceso(p.id, p.llegada, p.ejecucionTotal, [...p.bloques]);
+            nuevoProceso.llegadaOriginal = p.llegada; // Guardamos la llegada original
+            return nuevoProceso;
+        }).sort((a, b) => a.llegada - b.llegada);
 
-            while (colaLlegada.length > 0 || listos.length > 0 || bloqueados.length > 0) {
-                // 1. Llegada de nuevos procesos
-                while (colaLlegada.length > 0 && colaLlegada[0].llegada <= tiempo) {
-                    listos.push(colaLlegada.shift());
-                }
-
-                // 2. Desbloqueo de procesos
-                for (let i = 0; i < bloqueados.length; i++) {
-                    const proceso = bloqueados[i];
-                    if (tiempo >= proceso.bloqueoHasta) {
-                        bloqueados.splice(i, 1);
-                        listos.push(proceso);
-                        i--;
+        while (colaLlegada.length > 0 || listos.length > 0 || bloqueados.length > 0) {
+            // 1. Llegada de nuevos procesos
+            while (colaLlegada.length > 0 && colaLlegada[0].llegada <= tiempo) {
+                const nuevoProceso = colaLlegada.shift();
+                // Insertar manteniendo orden FCFS estricto
+                let insertado = false;
+                for (let i = 0; i < listos.length; i++) {
+                    if (nuevoProceso.llegadaOriginal < listos[i].llegadaOriginal) {
+                        listos.splice(i, 0, nuevoProceso);
+                        insertado = true;
+                        break;
                     }
                 }
-
-                // 3. Si no hay procesos listos, avanzar el tiempo
-                if (listos.length === 0) {
-                    tiempo++;
-                    tiempoPlanificacion++;
-                    continue;
-                }
-
-                // 4. Ejecutar proceso actual (FCFS)
-                const proceso = listos.shift();
-
-                // Tiempo de respuesta si es la primera vez
-                if (proceso.vecesEjecutado === 0) {
-                    proceso.tiempoRespuesta = tiempo - proceso.llegada;
-                }
-
-                while (proceso.ejecucionRestante > 0) {
-                    const bloque = proceso.bloques[proceso.bloqueActual];
-                    const ejecutadoHastaAhora = proceso.ejecucionTotal - proceso.ejecucionRestante;
-
-                    // Bloqueo si corresponde
-                    if (bloque && ejecutadoHastaAhora === bloque.inicio) {
-                        proceso.estado = 'bloqueado';
-                        proceso.bloqueoHasta = tiempo + bloque.duracion;
-                        proceso.tiempoBloqueo += bloque.duracion;
-                        proceso.bloqueActual++;
-                        bloqueados.push(proceso);
-                        tiempo += bloque.duracion;
-                        tiempoPlanificacion += bloque.duracion;
-                        break; // sale del while y vuelve al ciclo principal
-                    }
-
-                    // Ejecuta una unidad de tiempo
-                    proceso.ejecucionRestante--;
-                    proceso.vecesEjecutado++;
-                    tiempo++;
-                    tiempoCPU++;
-                }
-
-                // Si terminó, registramos
-                if (proceso.ejecucionRestante === 0) {
-                    proceso.instanteFin = tiempo;
-                    terminados.push(proceso);
+                if (!insertado) {
+                    listos.push(nuevoProceso);
                 }
             }
 
-            // Calcular estadísticas
-            terminados.forEach(p => {
-                const retorno = p.instanteFin - p.llegada;
-                const tiempoPerdido = retorno - p.ejecucionTotal - p.tiempoBloqueo;
-                const penalidad = (retorno / p.ejecucionTotal).toFixed(2);
+            // 2. Desbloqueo de procesos (manteniendo orden FCFS)
+            for (let i = 0; i < bloqueados.length; i++) {
+                const proceso = bloqueados[i];
+                if (tiempo >= proceso.bloqueoHasta) {
+                    bloqueados.splice(i, 1);
+                    // Insertar manteniendo orden FCFS estricto
+                    let insertado = false;
+                    for (let j = 0; j < listos.length; j++) {
+                        if (proceso.llegadaOriginal < listos[j].llegadaOriginal) {
+                            listos.splice(j, 0, proceso);
+                            insertado = true;
+                            break;
+                        }
+                    }
+                    if (!insertado) {
+                        listos.push(proceso);
+                    }
+                    i--;
+                }
+            }
 
-                estadisticas.push({
-                    proceso: p.id,
-                    ejecucion: p.ejecucionTotal,
-                    espera: tiempoPerdido,
-                    bloqueo: p.tiempoBloqueo,
-                    instanteFin: p.instanteFin,
-                    retorno: retorno,
-                    tiempoPerdido: tiempoPerdido,
-                    penalidad: penalidad,
-                    tiempoRespuesta: p.tiempoRespuesta
-                });
-            });
+            // 3. Si no hay procesos listos, avanzar el tiempo
+            if (listos.length === 0) {
+                tiempo++;
+                tiempoPlanificacion++;
+                continue;
+            }
 
-            // Métricas globales
-            const tiempoTotal = tiempo;
-            const usoCPU = ((tiempoCPU / tiempoTotal) * 100).toFixed(2);
-            const usoPlanificacion = ((tiempoPlanificacion / tiempoTotal) * 100).toFixed(2);
+            // 4. Ejecutar proceso actual (FCFS estricto)
+            const proceso = listos.shift();
 
-            return {
-                estadisticas: estadisticas,
-                tiempoTotal: tiempoTotal,
-                tiempoCPU: tiempoCPU,
-                tiempoPlanificacion: tiempoPlanificacion,
-                usoCPU: usoCPU,
-                usoPlanificacion: usoPlanificacion
-            };
+            // Tiempo de respuesta si es la primera vez
+            if (proceso.vecesEjecutado === 0) {
+                proceso.tiempoRespuesta = tiempo - proceso.llegada;
+            }
+
+            while (proceso.ejecucionRestante > 0) {
+                const bloque = proceso.bloques[proceso.bloqueActual];
+                const ejecutadoHastaAhora = proceso.ejecucionTotal - proceso.ejecucionRestante;
+
+                // Bloqueo si corresponde
+                if (bloque && ejecutadoHastaAhora === bloque.inicio) {
+                    proceso.estado = 'bloqueado';
+                    proceso.bloqueoHasta = tiempo + bloque.duracion;
+                    proceso.tiempoBloqueo += bloque.duracion;
+                    proceso.bloqueActual++;
+                    bloqueados.push(proceso);
+                    break;
+                }
+
+                proceso.ejecucionRestante--;
+                proceso.vecesEjecutado++;
+                tiempo++;
+                tiempoCPU++;
+            }
+
+            // Si terminó, registramos
+            if (proceso.ejecucionRestante === 0) {
+                proceso.instanteFin = tiempo;
+                terminados.push(proceso);
+            }
         }
-    },
 
-    SJF: {
+        // Calcular estadísticas (igual que antes)
+        terminados.forEach(p => {
+            const retorno = p.instanteFin - p.llegada;
+            const tiempoPerdido = retorno - p.ejecucionTotal - p.tiempoBloqueo;
+            const penalidad = (retorno / p.ejecucionTotal).toFixed(2);
+
+            estadisticas.push({
+                proceso: p.id,
+                ejecucion: p.ejecucionTotal,
+                espera: tiempoPerdido,
+                bloqueo: p.tiempoBloqueo,
+                instanteFin: p.instanteFin,
+                retorno: retorno,
+                tiempoPerdido: tiempoPerdido,
+                penalidad: penalidad,
+                tiempoRespuesta: p.tiempoRespuesta
+            });
+        });
+
+        // Métricas globales
+        const tiempoTotal = tiempo;
+        const usoCPU = ((tiempoCPU / tiempoTotal) * 100).toFixed(2);
+        const usoPlanificacion = ((tiempoPlanificacion / tiempoTotal) * 100).toFixed(2);
+
+        estadisticas.sort((a, b) => a.proceso.localeCompare(b.proceso));
+
+        return {
+            estadisticas: estadisticas,
+            tiempoTotal: tiempoTotal,
+            tiempoCPU: tiempoCPU,
+            tiempoPlanificacion: tiempoPlanificacion,
+            usoCPU: usoCPU,
+            usoPlanificacion: usoPlanificacion
+        };
+    }
+}
+,
+
+     SJF: {
         nombre: "Shortest Job First",
         descripcion: "Ejecuta primero el proceso con menor tiempo de ejecución (no expropiativo).",
         ejecutar: function(procesos){
@@ -249,152 +276,137 @@ const Algoritmos = {
         }
         
         
-    },
+    },   ,
+   
+SRTF: {
+    nombre: "Shortest Remaining Time First",
+    descripcion: "Selecciona el proceso con menor tiempo restante. Soporta bloqueos y permite interrupciones.",
+    ejecutar: function (procesos) {
+        let tiempo = 0;
+        let terminados = [];
+        let listos = [];
+        let bloqueados = [];
+        let estadisticas = [];
+        let tiempoCPU = 0;
+        let tiempoPlanificacion = 0;
 
-    SRTF: {
-        nombre: "Shortest Remaining Time First",
-        descripcion: "Ejecuta el proceso con menor tiempo restante (expropiativo).",
-        ejecutar: function (procesos) {
-            let tiempo = 0;
-            let listos = [];
-            let bloqueados = [];
-            let terminados = [];
-            let procesoActual = null;
-            let estadisticas = [];
-            let tiempoCPU = 0;
-            let tiempoPlanificacion = 0;
+        // Clonar y ordenar procesos por llegada
+        let colaLlegada = procesos.map(p => {
+            let nuevo = new Proceso(p.id, p.llegada, p.ejecucionTotal, [...p.bloques]);
+            nuevo.llegadaOriginal = p.llegada;
+            return nuevo;
+        }).sort((a, b) => a.llegada - b.llegada);
 
-            let procesosRestantes = procesos.map(p => new Proceso(p.id, p.llegada, p.ejecucionTotal, [...p.bloques]));
+        let procesoActual = null;
 
-            function actualizarColas() {
-                // Agregar procesos que han llegado
-                procesosRestantes = procesosRestantes.filter(p => {
-                    if (p.llegada <= tiempo) {
-                        p.estado = 'listo';
-                        listos.push(p);
-                        return false;
-                    }
-                    return true;
-                });
-
-                // Verificar procesos bloqueados
-                bloqueados = bloqueados.filter(p => {
-                    if (p.bloqueoHasta <= tiempo) {
-                        p.estado = 'listo';
-                        listos.push(p);
-                        return false;
-                    }
-                    return true;
-                });
+        while (colaLlegada.length > 0 || listos.length > 0 || bloqueados.length > 0 || procesoActual !== null) {
+            // 1. Llegan nuevos procesos
+            while (colaLlegada.length > 0 && colaLlegada[0].llegada <= tiempo) {
+                listos.push(colaLlegada.shift());
             }
 
-            while (procesosRestantes.length > 0 || listos.length > 0 ||
-                bloqueados.length > 0 || procesoActual !== null) {
-
-                actualizarColas();
-
-                // Ordenar por tiempo de ejecución restante
-                listos.sort((a, b) => a.ejecucionRestante - b.ejecucionRestante);
-
-                // Verificar si hay un proceso más corto que el actual
-                if (procesoActual !== null && listos.length > 0 &&
-                    listos[0].ejecucionRestante < procesoActual.ejecucionRestante) {
-                    listos.push(procesoActual);
-                    procesoActual = null;
-                    listos.sort((a, b) => a.ejecucionRestante - b.ejecucionRestante);
+            // 2. Desbloqueo de procesos
+            for (let i = 0; i < bloqueados.length; i++) {
+                const bloqueado = bloqueados[i];
+                if (tiempo >= bloqueado.bloqueoHasta) {
+                    listos.push(bloqueado);
+                    bloqueados.splice(i, 1);
+                    i--;
                 }
+            }
 
-                // Seleccionar próximo proceso a ejecutar
-                if (procesoActual === null && listos.length > 0) {
-                    procesoActual = listos.shift();
-                    procesoActual.estado = 'ejecutando';
+            // 3. Seleccionar el proceso con menor tiempo restante
+            if (listos.length > 0) {
+                const candidato = listos.reduce((min, p) => 
+                    p.ejecucionRestante < min.ejecucionRestante ? p : min
+                );
+                
+                // Si no hay proceso en ejecución o el candidato tiene menor tiempo restante, cambiar
+                if (!procesoActual || candidato.ejecucionRestante < procesoActual.ejecucionRestante) {
+                    if (procesoActual && procesoActual !== candidato) {
+                        listos.push(procesoActual); // Devuelve el anterior a listos
+                    }
+                    listos = listos.filter(p => p !== candidato);
+                    procesoActual = candidato;
 
-                    // Registrar tiempo de respuesta (primera vez)
-                    if (procesoActual.tiempoRespuesta === null) {
+                    if (procesoActual.vecesEjecutado === 0) {
                         procesoActual.tiempoRespuesta = tiempo - procesoActual.llegada;
                     }
                 }
-
-                // Ejecutar proceso actual
-                if (procesoActual !== null) {
-                    // Verificar si debe bloquearse en este ciclo
-                    const bloque = procesoActual.bloques[procesoActual.bloqueActual];
-                    const ejecutadoHastaAhora = procesoActual.ejecucionTotal - procesoActual.ejecucionRestante;
-
-                    if (bloque && ejecutadoHastaAhora >= bloque.inicio) {
-                        // Bloquear el proceso
-                        procesoActual.estado = 'bloqueado';
-                        procesoActual.bloqueoHasta = tiempo + bloque.duracion;
-                        procesoActual.tiempoBloqueo += bloque.duracion;
-                        procesoActual.bloqueActual++;
-                        bloqueados.push(procesoActual);
-
-                        tiempoPlanificacion += bloque.duracion;
-                        tiempo += bloque.duracion;
-                        procesoActual = null;
-                        continue;
-                    }
-
-                    // Ejecutar 1 unidad de tiempo
-                    procesoActual.ejecucionRestante--;
-                    procesoActual.vecesEjecutado++;
-                    tiempoCPU++;
-                    tiempo++;
-
-                    // Verificar si terminó
-                    if (procesoActual.ejecucionRestante === 0) {
-                        procesoActual.instanteFin = tiempo;
-                        terminados.push(procesoActual);
-                        procesoActual = null;
-                    }
-                } else {
-                    // CPU idle
-                    tiempoPlanificacion++;
-                    tiempo++;
-                }
-
-                // Actualizar tiempos de espera
-                listos.forEach(p => {
-                    p.tiempoEspera++;
-                });
             }
 
-            // Calcular estadísticas
-            terminados.forEach(p => {
-                const retorno = p.instanteFin - p.llegada;
-                const tiempoPerdido = retorno - p.ejecucionTotal - p.tiempoBloqueo;
-                const penalidad = (retorno / p.ejecucionTotal).toFixed(3);
+            // 4. Si no hay proceso actual, tiempo ocioso
+            if (!procesoActual) {
+                tiempo++;
+                tiempoPlanificacion++;
+                continue;
+            }
 
-                estadisticas.push({
-                    proceso: p.id,
-                    ejecucion: p.ejecucionTotal,
-                    tiempoRespuesta: p.tiempoRespuesta,
-                    espera: tiempoPerdido,
-                    bloqueo: p.tiempoBloqueo,
-                    instanteFin: p.instanteFin,
-                    retorno: retorno,
-                    tiempoPerdido: tiempoPerdido,
-                    penalidad: penalidad
-                });
-            });
+            // 5. Ejecutar una unidad de tiempo del proceso actual
+            const ejecutado = procesoActual.ejecucionTotal - procesoActual.ejecucionRestante;
+            const bloque = procesoActual.bloques[procesoActual.bloqueActual];
 
-            // Calcular métricas globales
-            const tiempoTotal = tiempo;
-            const usoCPU = ((tiempoCPU / tiempoTotal) * 100).toFixed(2);
-            const usoPlanificacion = ((tiempoPlanificacion / tiempoTotal) * 100).toFixed(2);
+            if (bloque && ejecutado === bloque.inicio) {
+                procesoActual.bloqueoHasta = tiempo + bloque.duracion;
+                procesoActual.tiempoBloqueo += bloque.duracion;
+                procesoActual.bloqueActual++;
+                bloqueados.push(procesoActual);
+                procesoActual = null;
+                tiempo++;
+                tiempoCPU++;
+                continue;
+            }
 
-            return {
-                estadisticas: estadisticas,
-                tiempoTotal: tiempoTotal,
-                tiempoCPU: tiempoCPU,
-                tiempoPlanificacion: tiempoPlanificacion,
-                usoCPU: usoCPU,
-                usoPlanificacion: usoPlanificacion
-            };
+            procesoActual.ejecucionRestante--;
+            procesoActual.vecesEjecutado++;
+            tiempo++;
+            tiempoCPU++;
+
+            // Si terminó
+            if (procesoActual.ejecucionRestante === 0) {
+                procesoActual.instanteFin = tiempo;
+                terminados.push(procesoActual);
+                procesoActual = null;
+            }
         }
-    },
 
-    RR: {
+        // Calcular estadísticas
+        terminados.forEach(p => {
+            const retorno = p.instanteFin - p.llegada;
+            const tiempoPerdido = retorno - p.ejecucionTotal - p.tiempoBloqueo;
+            const penalidad = (retorno / p.ejecucionTotal).toFixed(2);
+
+            estadisticas.push({
+                proceso: p.id,
+                ejecucion: p.ejecucionTotal,
+                espera: tiempoPerdido,
+                bloqueo: p.tiempoBloqueo,
+                instanteFin: p.instanteFin,
+                retorno: retorno,
+                tiempoPerdido: tiempoPerdido,
+                penalidad: penalidad,
+                tiempoRespuesta: p.tiempoRespuesta
+            });
+        });
+
+        const tiempoTotal = tiempo;
+        const usoCPU = ((tiempoCPU / tiempoTotal) * 100).toFixed(2);
+        const usoPlanificacion = ((tiempoPlanificacion / tiempoTotal) * 100).toFixed(2);
+
+        estadisticas.sort((a, b) => a.proceso.localeCompare(b.proceso));
+
+        return {
+            estadisticas: estadisticas,
+            tiempoTotal: tiempoTotal,
+            tiempoCPU: tiempoCPU,
+            tiempoPlanificacion: tiempoPlanificacion,
+            usoCPU: usoCPU,
+            usoPlanificacion: usoPlanificacion
+        };
+    }
+},
+
+   RR: {
         nombre: "Round Robin",
         descripcion: "Asigna un quantum fijo a cada proceso en orden circular.",
         ejecutar: function (procesos, quantum) {
@@ -691,6 +703,8 @@ function renumerarProcesos() {
 function limpiarProcesos() {
     document.getElementById('proceso-inputs').innerHTML = '';
     siguienteId = 1;
+    // Agregamos un proceso vacío por defecto
+    agregarProceso();
 }
 
 function simular() {
@@ -742,6 +756,8 @@ function simular() {
     // Mostrar resultados
     mostrarResultados(resultados, algoritmo);
 }
+
+
 
 // Inicializar con un proceso al cargar
 window.onload = function () {
