@@ -460,7 +460,10 @@ tr:hover td {
     font-size: 10px;
     transition: width 0.3s;
     position: relative;
+    border-right: 1px solid #e2e8f0;
+    box-sizing: border-box;
 }
+
 
 .gantt-segment:hover {
     z-index: 2;
