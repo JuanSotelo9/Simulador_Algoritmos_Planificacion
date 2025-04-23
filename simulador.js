@@ -35,24 +35,9 @@ const Algoritmos = {
       let estadisticas = [];
       let tiempoCPU = 0;
       let tiempoPlanificacion = 0;
+      let historial = {};
 
-      // Copiar procesos y ordenarlos por llegada
-      let colaLlegada = procesos
-        .map((p) => {
-          let nuevoProceso = new Proceso(p.id, p.llegada, p.ejecucionTotal, [
-            ...p.bloques,
-          ]);
-          nuevoProceso.llegadaOriginal = p.llegada; // Guardamos la llegada original
-          return nuevoProceso;
-        })
-        .sort((a, b) => a.llegada - b.llegada);
-
-      while (
-        colaLlegada.length > 0 ||
-        listos.length > 0 ||
-        bloqueados.length > 0
-      ) {
-        // 1. Llegada de nuevos procesos
+      function verificarLlegada(colaLlegada){
         while (colaLlegada.length > 0 && colaLlegada[0].llegada <= tiempo) {
           const nuevoProceso = colaLlegada.shift();
           // Insertar manteniendo orden FCFS estricto
@@ -65,11 +50,12 @@ const Algoritmos = {
             }
           }
           if (!insertado) {
+            historial[nuevoProceso.id] = {};
             listos.push(nuevoProceso);
           }
         }
-
-        // 2. Desbloqueo de procesos (manteniendo orden FCFS)
+      }
+      function verificarBloqueados(){
         for (let i = 0; i < bloqueados.length; i++) {
           const proceso = bloqueados[i];
           if (tiempo >= proceso.bloqueoHasta) {
@@ -88,7 +74,30 @@ const Algoritmos = {
             }
             i--;
           }
+          historial[proceso.id][tiempo] = "b";
         }
+      }
+      // Copiar procesos y ordenarlos por llegada
+      let colaLlegada = procesos
+        .map((p) => {
+          let nuevoProceso = new Proceso(p.id, p.llegada, p.ejecucionTotal, [
+            ...p.bloques,
+          ]);
+          nuevoProceso.llegadaOriginal = p.llegada; // Guardamos la llegada original
+          return nuevoProceso;
+        })
+        .sort((a, b) => a.llegada - b.llegada);
+
+      while (
+        colaLlegada.length > 0 ||
+        listos.length > 0 ||
+        bloqueados.length > 0
+      ) {
+        // 1. Llegada de nuevos procesos
+        verificarLlegada(colaLlegada);
+
+        // 2. Desbloqueo de procesos (manteniendo orden FCFS)
+        verificarBloqueados();
 
         // 3. Si no hay procesos listos, avanzar el tiempo
         if (listos.length === 0) {
@@ -122,6 +131,14 @@ const Algoritmos = {
 
           proceso.ejecucionRestante--;
           proceso.vecesEjecutado++;
+          historial[proceso.id][tiempo] = "e";
+          verificarLlegada(colaLlegada);
+          verificarBloqueados();
+          for (let i = 0; i < listos.length; i++) {
+            if (proceso.id != listos[i].id) {
+              historial[listos[i].id][tiempo] = "es";
+            }
+          }
           tiempo++;
           tiempoCPU++;
         }
@@ -163,6 +180,7 @@ const Algoritmos = {
       estadisticas.sort((a, b) => a.proceso.localeCompare(b.proceso));
 
       return {
+        historial : historial,
         estadisticas: estadisticas,
         tiempoTotal: tiempoTotal,
         tiempoCPU: tiempoCPU,
