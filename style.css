@@ -462,6 +462,7 @@ tr:hover td {
     position: relative;
     border-right: 1px solid #e2e8f0;
     box-sizing: border-box;
+    
 }
 
 
@@ -483,6 +484,7 @@ tr:hover td {
     text-align: center;
     font-size: 10px;
     color: #718096;
+    font-family: monospace;
 }
 
 .btn-example {
@@ -500,3 +502,4 @@ tr:hover td {
 .btn-example:hover {
     background-color: #5a6268;
 }
+

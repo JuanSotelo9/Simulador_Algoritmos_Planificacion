@@ -539,6 +539,7 @@ const Algoritmos = {
           historial["D"][tiempo] = "q";
           tiempo++;
           tiempoPlanificacion++;
+          verificarLlegada(colaLlegada);
         }
 
         // Revisamos si se termina algun bloqueo
@@ -546,6 +547,7 @@ const Algoritmos = {
 
         // Si no hay procesos listos, el tiempo avanzara
         if (listos.length === 0) {
+          historial["D"][tiempo] = "q";
           tiempo++;
           tiempoPlanificacion++;
           continue;
@@ -679,7 +681,7 @@ const colores = {
   b: "red",
   es: "gray",
   q: "cyan",
-  "": "#f0f0f0",
+  "": "beige",
 };
 
 function dibujarLinea(json, tiempoMaximo) {
