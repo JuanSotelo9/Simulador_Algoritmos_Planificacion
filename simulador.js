@@ -335,115 +335,117 @@ const Algoritmos = {
   SRTF: {
     nombre: "Shortest Remaining Time First",
     descripcion:
-      "Selecciona el proceso con menor tiempo restante. Soporta bloqueos y permite interrupciones.",
+      "Ejecuta el proceso con el menor tiempo restante. Interrumpe si llega uno más corto.",
     ejecutar: function (procesos) {
       let tiempo = 0;
-      let terminados = [];
       let listos = [];
       let bloqueados = [];
+      let terminados = [];
       let estadisticas = [];
       let tiempoCPU = 0;
       let tiempoPlanificacion = 0;
+      let historial = {};
+  
+      function verificarLlegada(colaLlegada) {
+        while (colaLlegada.length > 0 && colaLlegada[0].llegada <= tiempo) {
+          const proc = colaLlegada.shift();
+          historial[proc.id] = {};
+          listos.push(proc);
+        }
+      }
 
-      // Clonar y ordenar procesos por llegada
+      function verificarBloqueados() {
+        for (let i = 0; i < bloqueados.length; i++) {
+          const proceso = bloqueados[i];
+          if (tiempo >= proceso.bloqueoHasta) {
+            bloqueados.splice(i, 1);
+            listos.push(proceso);
+            i--;
+          }
+          historial[proceso.id][tiempo] = "b";
+        }
+      }
+
+      // Se copia los procesos y se ordenan por orden de llegada
       let colaLlegada = procesos
-        .map((p) => {
-          let nuevo = new Proceso(p.id, p.llegada, p.ejecucionTotal, [
-            ...p.bloques,
-          ]);
-          nuevo.llegadaOriginal = p.llegada;
-          return nuevo;
-        })
+        .map(
+          (p) => new Proceso(p.id, p.llegada, p.ejecucionTotal, [...p.bloques])
+        )
         .sort((a, b) => a.llegada - b.llegada);
-
-      let procesoActual = null;
 
       while (
         colaLlegada.length > 0 ||
         listos.length > 0 ||
-        bloqueados.length > 0 ||
-        procesoActual !== null
+        bloqueados.length > 0
       ) {
-        // 1. Llegan nuevos procesos
-        while (colaLlegada.length > 0 && colaLlegada[0].llegada <= tiempo) {
-          listos.push(colaLlegada.shift());
-        }
+        // Revisamos si llegan nuevos procesos
+        verificarLlegada(colaLlegada);
 
-        // 2. Desbloqueo de procesos
-        for (let i = 0; i < bloqueados.length; i++) {
-          const bloqueado = bloqueados[i];
-          if (tiempo >= bloqueado.bloqueoHasta) {
-            listos.push(bloqueado);
-            bloqueados.splice(i, 1);
-            i--;
-          }
-        }
+        verificarBloqueados();
 
-        // 3. Seleccionar el proceso con menor tiempo restante
-        if (listos.length > 0) {
-          const candidato = listos.reduce((min, p) =>
-            p.ejecucionRestante < min.ejecucionRestante ? p : min
-          );
-
-          // Si no hay proceso en ejecución o el candidato tiene menor tiempo restante, cambiar
-          if (
-            !procesoActual ||
-            candidato.ejecucionRestante < procesoActual.ejecucionRestante
-          ) {
-            if (procesoActual && procesoActual !== candidato) {
-              listos.push(procesoActual); // Devuelve el anterior a listos
-            }
-            listos = listos.filter((p) => p !== candidato);
-            procesoActual = candidato;
-
-            if (procesoActual.vecesEjecutado === 0) {
-              procesoActual.tiempoRespuesta = tiempo - procesoActual.llegada;
-            }
-          }
-        }
-
-        // 4. Si no hay proceso actual, tiempo ocioso
-        if (!procesoActual) {
+        // Si no hay procesos listos, el tiempo avanzara
+        if (listos.length === 0) {
           tiempo++;
           tiempoPlanificacion++;
           continue;
         }
 
-        // 5. Ejecutar una unidad de tiempo del proceso actual
-        const ejecutado =
-          procesoActual.ejecucionTotal - procesoActual.ejecucionRestante;
-        const bloque = procesoActual.bloques[procesoActual.bloqueActual];
+        // Seleccionamos el proceso con menor tiempo de ejecucion
+        listos.sort((a, b) => {
+          if (a.ejecucionRestante === b.ejecucionRestante) {
+            return a.llegada - b.llegada; // desempate por llegada
+          }
+          return a.ejecucionRestante - b.ejecucionRestante;
+        });
+        procesoActual = listos.shift();
 
-        if (bloque && ejecutado === bloque.inicio) {
-          procesoActual.bloqueoHasta = tiempo + bloque.duracion;
-          procesoActual.tiempoBloqueo += bloque.duracion;
-          procesoActual.bloqueActual++;
-          bloqueados.push(procesoActual);
-          procesoActual = null;
-          tiempo++;
-          tiempoCPU++;
-          continue;
+        // Se calcula el tiempo de respuesta si es la primera vez que llega
+        if (procesoActual.vecesEjecutado === 0) {
+          procesoActual.tiempoRespuesta = tiempo - procesoActual.llegada;
         }
 
-        procesoActual.ejecucionRestante--;
-        procesoActual.vecesEjecutado++;
-        tiempo++;
-        tiempoCPU++;
+        while (procesoActual.ejecucionRestante > 0) {
+          const bloque = procesoActual.bloques[procesoActual.bloqueActual];
+          const ejecucionHastaAhora =
+            procesoActual.ejecucionTotal - procesoActual.ejecucionRestante;
 
-        // Si terminó
+          // Verificamos si inicia un bloqueo
+          if (bloque && ejecucionHastaAhora === bloque.inicio) {
+            procesoActual.estado = "bloqueado";
+            procesoActual.bloqueoHasta = tiempo + bloque.duracion;
+            procesoActual.tiempoBloqueo += bloque.duracion;
+            procesoActual.bloqueActual++;
+            bloqueados.push(procesoActual);
+            break; // sale del while y vuelve al ciclo principal
+          }
+
+          // Ejecutamos una unidad de tiempo
+          procesoActual.ejecucionRestante--;
+          procesoActual.vecesEjecutado++;
+          historial[procesoActual.id][tiempo] = "e";
+          verificarLlegada(colaLlegada);
+          verificarBloqueados();
+          for (let i = 0; i < listos.length; i++) {
+            if (procesoActual.id != listos[i].id) {
+              historial[listos[i].id][tiempo] = "es";
+            }
+          }
+          tiempo++;
+          tiempoCPU++;
+        }
+
         if (procesoActual.ejecucionRestante === 0) {
           procesoActual.instanteFin = tiempo;
           terminados.push(procesoActual);
-          procesoActual = null;
         }
       }
-
-      // Calcular estadísticas
+  
+      // Estadísticas
       terminados.forEach((p) => {
         const retorno = p.instanteFin - p.llegada;
         const tiempoPerdido = retorno - p.ejecucionTotal - p.tiempoBloqueo;
         const penalidad = (retorno / p.ejecucionTotal).toFixed(2);
-
+  
         estadisticas.push({
           proceso: p.id,
           ejecucion: p.ejecucionTotal,
@@ -456,17 +458,18 @@ const Algoritmos = {
           tiempoRespuesta: p.tiempoRespuesta,
         });
       });
-
+  
+      estadisticas.sort((a, b) => a.proceso.localeCompare(b.proceso));
+  
       const tiempoTotal = tiempo;
       const usoCPU = ((tiempoCPU / tiempoTotal) * 100).toFixed(2);
       const usoPlanificacion = (
         (tiempoPlanificacion / tiempoTotal) *
         100
       ).toFixed(2);
-
-      estadisticas.sort((a, b) => a.proceso.localeCompare(b.proceso));
-
+  
       return {
+        historial: historial,
         estadisticas: estadisticas,
         tiempoTotal: tiempoTotal,
         tiempoCPU: tiempoCPU,
@@ -476,6 +479,7 @@ const Algoritmos = {
       };
     },
   },
+  
 
   RR: {
     nombre: "Round Robin",
